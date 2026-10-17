@@ -1,0 +1,32 @@
+# matugen 配置（Windows）—— 与 Linux 端 ~/.config/matugen/config.toml 同构。
+#
+# 这个配置负责"能直接落盘"的三项：提示符 + 信息面板 + opencode 主题。
+# Windows Terminal 的配色需要"合并进 settings.json"这一步，所以请用 mucai-regen：
+#
+#     mucai-regen                          # 用当前壁纸刷新整套
+#     mucai-regen -Ansi classic            # ANSI 16 色保持现在这套 pastel
+#     mucai-regen -DryRun                  # 只看颜色，不写文件
+#     mucai-regen -Rollback                # 退回上一次
+#
+# 想单独跑 matugen（例如只更新提示符和面板）：
+#
+#     matugen --config ~/.config/matugen/config.toml image <壁纸> --prefer saturation
+#
+# 注意：单独跑不会更新 Windows Terminal 的方案，会处于"提示符已换、方案没换"的中间状态。
+[config]
+caching = false
+
+[templates.starship]
+input_path = '~/.config/matugen/templates/starship-colors.toml'
+output_path = '~/.config/starship.toml'
+
+[templates.fastfetch]
+input_path = '~/.config/matugen/templates/fastfetch-config.jsonc'
+output_path = '~/.config/fastfetch/config.jsonc'
+
+# --- opencode 主题（模板与 Linux 端那份相同）---
+# 这里只负责生成主题文件；opencode 用不用它，取决于它自己的状态文件
+# ~/.local/state/opencode/kv.json 里的 "theme":"matugen"（由 opencode 的 /theme 选择器写入）。
+[templates.opencode]
+input_path = '~/.config/matugen/templates/opencode-theme.json'
+output_path = '~/.config/opencode/themes/matugen.json'

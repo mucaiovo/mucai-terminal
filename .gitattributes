@@ -1,0 +1,11 @@
+# 默认让 git 自己判断文本/二进制
+* text=auto
+
+# Windows 脚本：检出成 CRLF（PowerShell 不在乎，但记事本在乎）
+*.ps1  text eol=crlf
+*.cmd  text eol=crlf
+
+# 以下文件必须保持原样：验证脚本会对它们做逐字节比对
+*.gzb64                                  -text
+_build/matugen/templates/**              -text
+_build/reference/expected/**    -text

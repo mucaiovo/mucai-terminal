@@ -1,0 +1,142 @@
+# 把编译好的 matugen 放到 GitHub 仓库里
+#
+# 用法：
+#   1. 在 GitHub 上建一个仓库（public / private 都行，名字随意，比如 matugen-win）
+#   2. 把这个文件放到 `.github/workflows/build-matugen.yml`
+#   3. 到 Actions 页面点 "Run workflow"（或等每周一自动跑）
+#   4. 跑完去 Releases 页面下载 matugen.exe
+#
+# 为什么不需要 fork 上游：源码从 crates.io 拉（cargo install），不需要 checkout 代码，
+# 所以不用跟着 upstream 同步。
+
+name: build-matugen-windows
+
+on:
+  # 手动触发，可以指定版本
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'matugen 版本（留空 = 自动取 crates.io 最新）'
+        required: false
+        default: ''
+  # 每周一自动检查一次：有新版本才构建并发布
+  schedule:
+    - cron: '17 3 * * 1'
+
+# 发 Release 需要写权限
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest    # 自带 MSVC 链接器，所以不需要 GNU 工具链
+
+    steps:
+      - name: 解析目标版本
+        id: v
+        shell: pwsh
+        env:
+          WANT: ${{ github.event.inputs.version }}
+        run: |
+          $want = $env:WANT
+          if (-not $want) {
+            $meta = Invoke-RestMethod 'https://crates.io/api/v1/crates/matugen' `
+                      -Headers @{ 'User-Agent' = 'mucai-terminal' }
+            $want = $meta.crate.max_stable_version
+          }
+          Write-Host "目标版本: $want"
+          "version=$want" >> $env:GITHUB_OUTPUT
+
+      - name: 检查这个版本是否已经发布过
+        id: check
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.v.outputs.version }}
+        run: |
+          # 这里刻意不用 gh CLI：
+          #   1) 原生命令（gh/cargo/...）失败时 PowerShell 不会抛异常，try/catch 抓不住，
+          #      会导致"没找到 Release"却被判成"已存在"（第一版就是这么坏的）
+          #   2) 原生命令留下的 $LASTEXITCODE 会被 Actions 的 pwsh 包装器当成步骤退出码
+          # Invoke-RestMethod 配 -ErrorAction Stop，对 404 是会正常抛异常的。
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept        = 'application/vnd.github+json'
+          }
+          $uri = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$env:TAG"
+          $exists = $false
+          try {
+            Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 30 -ErrorAction Stop | Out-Null
+            $exists = $true
+          }
+          catch {
+            $code = $null
+            try { $code = [int]$_.Exception.Response.StatusCode } catch { }
+            if ($code -eq 404) { $exists = $false }
+            else { throw "查询 Release 失败（HTTP $code）：$($_.Exception.Message)" }
+          }
+          Write-Host "版本 $($env:TAG) 已存在: $exists"
+          "exists=$($exists.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+
+      - name: 安装 Rust
+        if: steps.check.outputs.exists == 'false'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 编译 matugen（约 9 分钟）
+        if: steps.check.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          cargo install matugen --version "${{ steps.v.outputs.version }}" --locked `
+            --root "$env:RUNNER_TEMP\mi"
+          if ($LASTEXITCODE -ne 0) { throw "cargo install 失败" }
+
+      - name: 打包产物（exe + 安装脚本用的 gzb64 + 校验和）
+        if: steps.check.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "$env:RUNNER_TEMP\mi\bin\matugen.exe" dist\matugen.exe
+
+          # gzip + base64：直接丢进安装脚本仓库的 _build\matugen\ 就能被 inject.py 用
+          $raw = [IO.File]::ReadAllBytes('dist\matugen.exe')
+          $ms  = New-Object IO.MemoryStream
+          $gz  = New-Object IO.Compression.GZipStream($ms, [IO.Compression.CompressionLevel]::Optimal)
+          $gz.Write($raw, 0, $raw.Length)
+          $gz.Close()
+          $b64 = [Convert]::ToBase64String($ms.ToArray())
+          [IO.File]::WriteAllText("dist\matugen-${{ steps.v.outputs.version }}.gzb64", $b64)
+
+          $hash = (Get-FileHash dist\matugen.exe -Algorithm SHA256).Hash
+          "$hash  matugen.exe" | Set-Content dist\SHA256SUMS.txt
+
+          Write-Host "--- 产物 ---"
+          Get-ChildItem dist | ForEach-Object { Write-Host ("  {0,-34} {1:N1} MB" -f $_.Name, ($_.Length / 1MB)) }
+          Write-Host "--- 自检 ---"
+          & dist\matugen.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "matugen.exe 跑不起来" }
+
+      - name: 上传 artifact（不依赖 Release，90 天有效）
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: matugen-${{ steps.v.outputs.version }}-windows-x64
+          path: dist/
+
+      - name: 发布 Release
+        if: steps.check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.v.outputs.version }}
+          name: matugen v${{ steps.v.outputs.version }} (windows x64)
+          body: |
+            自动构建的 matugen ${{ steps.v.outputs.version }}（Windows x64）。
+
+            源码来自 crates.io 上的 `matugen ${{ steps.v.outputs.version }}`，
+            构建环境 `windows-latest` / stable Rust / `--locked`。
+
+            产物：
+            - `matugen.exe` —— 直接丢进 `~/.local/bin` 或放在 `Install-MucaiTerminal.ps1` 同目录
+            - `matugen-${{ steps.v.outputs.version }}.gzb64` —— 丢进 `_build\matugen\` 后跑 `inject.py`，可把新版本嵌进安装脚本
+            - `SHA256SUMS.txt`
+          files: dist/*
+          generate_release_notes: false

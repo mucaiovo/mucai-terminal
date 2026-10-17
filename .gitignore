@@ -1,0 +1,11 @@
+# 验证脚本生成的输出（可随时重跑生成）
+_build/matugen-verify/out*/
+_build/matugen-verify/config.*.toml
+
+# 安装/部署时留下的备份
+*.bak-*
+*.bak-rename-*
+
+# 临时文件
+*.tmp
+*.log

@@ -1,0 +1,3 @@
+# 由 matugen 渲染（第一趟：从壁纸）—— 导出它实际选中的种子色。
+# mucai-regen.ps1 读这个值，拿去跑第二趟生成 base16。
+source_color={{colors.source_color.default.hex}}

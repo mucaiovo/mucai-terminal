@@ -1,0 +1,13 @@
+# 由 matugen 渲染（第一趟：从壁纸），供 mucai-regen.ps1 合并进 Windows Terminal settings.json。
+# 不要手工编辑 —— 每次生成都会覆盖。
+#
+# 这个文件只负责"窗口外观"：背景/前景/光标/选中/标签栏。
+# 16 个 ANSI 槽在 windows-terminal-ansi.txt 里（那一份要跑第二趟 matugen 才拿得到）。
+
+background={{colors.surface.default.hex}}
+foreground={{colors.on_surface.default.hex}}
+cursorColor={{colors.primary.default.hex}}
+selectionBackground={{colors.secondary.default.hex}}
+
+tabActive={{colors.primary.default.hex}}
+tabRow={{colors.surface.default.hex}}
